@@ -1,6 +1,6 @@
 
-#ifndef _LCD_UI
-#define _LCD_UI
+#ifndef _LCD_UI_H
+#define _LCD_UI_H
 
 #include <sys/types.h>	//open
 #include <sys/stat.h>	//open
@@ -241,6 +241,7 @@ int draw_bmp(LcdDevice* lcd,int width,int high,const char *filename)
 
 		}
 	}
+	return 0;
 }
 
 //获取坐标 x列 y行

@@ -19,13 +19,13 @@
 
 int main(int argc , char **argv)
 {
-	//LcdDevice* lcd = create_lcd("/dev/ubuntu_lcd");
-	LcdDevice* lcd = create_lcd("/dev/fb0");
+	LcdDevice* lcd = create_lcd("/dev/ubuntu_lcd");
+	//LcdDevice* lcd = create_lcd("/dev/fb0");
 	if(lcd == NULL) exit(1);//为空指针表示没有创建成功
 
 	//触摸屏 打开设备/dev/input/event0
-	int fd = open("/dev/input/event0", O_RDWR);
-	//int fd = open("/dev/ubuntu_event", O_RDWR);
+	//int fd = open("/dev/input/event0", O_RDWR);
+	int fd = open("/dev/ubuntu_event", O_RDWR);
 	if(fd < 0)
 	{
 		perror("open fail");
@@ -36,7 +36,7 @@ int main(int argc , char **argv)
 	draw_button(lcd);
 	int j;
 	for(j=0;j<7;j++)
-		draw_word(lcd,2000,200+j*56,56,56*56/8,hello[j],0x00FF00F0);
+		draw_word(lcd,200,200+j*56,56,56*56/8,hello[j],0x00FF00F0);
 	for(j=0;j<3;j++)
 		draw_word(lcd,50,200+j*56,56,56*56/8,my_name[j],0xff0000);
 	//测试点
@@ -74,13 +74,15 @@ int main(int argc , char **argv)
 			}
 		}else if(x>700 && x<800 && y>100 && y<250)	
 		{
-			if(index < 2)
+			if(index < 5)
 			{	
 				index++;
 			}
 		}
-		jpeg_show(lcd,jpg_name[index]);
-		//draw_bmp(lcd,800,480,bmp_name[index]);	
+		if(index>=0 && index <=2)
+			jpeg_show(lcd,jpg_name[index]);
+		else if(index>=3 && index<=5)
+			draw_bmp(lcd,800,480,bmp_name[index-3]);	
 		draw_button(lcd);
 	}
 	
