@@ -33,12 +33,16 @@ int main(int argc , char **argv)
 	}
 	//clear_lcd(lcd, 0xffffff);//把屏幕设置白色背景
 	clear_lcd(lcd, 0x000000);//黑色
-	draw_button(lcd);
+	
 	int j;
 	for(j=0;j<7;j++)
 		draw_word(lcd,200,200+j*56,56,56*56/8,hello[j],0x00FF00F0);
 	for(j=0;j<3;j++)
 		draw_word(lcd,50,200+j*56,56,56*56/8,my_name[j],0xff0000);
+	sleep(2);
+	draw_bmp(lcd,800,480,"./hello.bmp");
+	draw_button(lcd);
+	
 	//测试点
 	//jpeg_show(lcd,"./1.jpg");
 	//draw_bmp(lcd,800,480,"./1.bmp");
@@ -78,12 +82,18 @@ int main(int argc , char **argv)
 			{	
 				index++;
 			}
+		}else if(x>750 && x<800 && y>0 && y<50)
+		{
+			jpeg_show(lcd,"./bye.jpg");
+			sleep(1);
+			break;
 		}
 		if(index>=0 && index <=2)
 			jpeg_show(lcd,jpg_name[index]);
 		else if(index>=3 && index<=5)
 			draw_bmp(lcd,800,480,bmp_name[index-3]);	
 		draw_button(lcd);
+		draw_circle(lcd,25,750,25,0x0000ff);
 	}
 	
 	destroy_lcd(lcd);
