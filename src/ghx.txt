@@ -1,0 +1,121 @@
+#include <sys/types.h>	//open /* See NOTES */
+#include <sys/stat.h>	//open
+#include <fcntl.h> //open
+#include <unistd.h>	//close
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <arpa/inet.h>      
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+#include "lcd_ui.h"
+
+#define PORT 5432
+#define MAX_QUE_CONN_NM 5
+#define BUFFER_SIZE 1024
+
+//编译命令
+// arm-linux-gcc test.c -o test -lm -L. -ljpeg -static
+// gcc test.c -o test -lm -L. -ljpeg
+
+int main(int argc , char *argv[])
+{
+	//建立套接字 
+	int server_sock_fd = socket(AF_INET,SOCK_STREAM,0);
+	if(server_sock_fd < 0)
+	{
+		perror("socket error");
+		return 0;
+	}
+	//绑定地址 
+	struct sockaddr_in server_addr;
+	bzero(&server_addr,sizeof(server_addr));  //置0
+
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(atoi(argv[2]));
+	server_addr.sin_addr.s_addr = inet_addr(argv[1]);
+
+	int ret = bind(server_sock_fd,(struct sockaddr*)&server_addr,sizeof(server_addr));
+	if(ret <0)
+	{
+		perror("bind error");
+		close(server_sock_fd);
+		return -1;
+	}
+	//第三步：设置服务器的监听
+
+	ret = listen(server_sock_fd,10);
+	if(ret <0)
+	{
+		perror("listen error");
+		close(server_sock_fd);
+		return -1;
+	}
+	
+	//第四步：接受链接 
+	while(1)
+	{
+		struct sockaddr_in client_addr;
+		bzero(&client_addr,sizeof(client_addr));
+		int addr_len = sizeof(client_addr);
+		int client_sock_fd = accept(server_sock_fd,(struct sockaddr*)&client_addr,&addr_len);
+		if(client_sock_fd < 0)
+		{
+			perror("accept error");
+			close(server_sock_fd);
+			return -1;
+		}
+		 
+		printf("client_port = %d\n",ntohs(client_addr.sin_port));
+
+		char client_addr_str[16]={0};
+		inet_ntop(AF_INET,&client_addr.sin_addr.s_addr,client_addr_str,INET_ADDRSTRLEN);
+		printf("client_addr_str = %s\n",client_addr_str);
+		
+		//第五步：收发数据
+		//第一步：打开图片文件 
+		int pic_fd = open("./pic/1.bmp",O_RDWR);
+		if(pic_fd < 0)
+		{
+			perror("open pic error");
+			return -1;
+		}
+		
+		//第二步：读取图片上的内容 
+		unsigned char pic[800*480*3] = {0};//注意 为什么需要用无符号表示
+		//显示图片的时候 将54个字节的文件头偏移走！
+		//前54个字节为文件头 表示文件的格式 长 宽 大小 以及色深等信息 需要跳过 
+		int ret = lseek(pic_fd,54,SEEK_SET);	
+		if(ret < 0)
+		{
+			perror("lseek pic error");
+			close(pic_fd);
+			return -1;
+		}
+		ret = read(pic_fd,pic,800*480*3);
+		if(ret < 0)
+		{
+			perror("read pic error");
+			close(pic_fd);
+			return -1;
+		}
+		close(pic_fd);
+		
+		char *str = "connect server success!\n";
+		char buf[1024]={0};
+		
+		ret = send(client_sock_fd,pic,BUFFER_SIZE,0);
+		if(ret < 0)
+		{
+			perror("send error");
+			close(server_sock_fd);
+			close(client_sock_fd);
+			return -1;
+		}
+		close(client_sock_fd);
+	}
+	//第六步：关闭 
+	close(server_sock_fd);
+}

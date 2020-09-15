@@ -1,0 +1,294 @@
+BMP图片是未经压缩的图片，其内容包括头信息和颜色有效信息
+
+头信息包括下面几个部分：文件头，信息头，调色板
+
+我们可以使用一个结构体来表示头部信息
+
+
+/* 
+ * 这句话的意思是地址采用1字节对齐 
+ * 由于gcc默认是4字节对齐，而我们这里需要和bmp的头部信息一一对应，所以应该采用1字节对齐方式
+ */
+#pragma pack (1) 
+ 
+typedef struct { 
+    uint8_t bf_type[2]; // 2Bytes，必须为"BM"，即0x424D 才是Windows位图文件
+    uint32_t bf_size; // 4Bytes，整个BMP文件的大小
+    uint16_t bf_reserved1; // 2Bytes，保留，为0
+    uint16_t bf_reserved2; // 2Bytes，保留，为0
+    uint32_t bf_off_bits; // 4Bytes，文件起始位置到图像像素数据的字节偏移量
+} t_bmp_file_header;
+ 
+typedef struct {
+    uint32_t bi_size; // 4Bytes，INFOHEADER结构体大小，存在其他版本I NFOHEADER，用作区分
+    uint32_t bi_width; // 4Bytes，图像宽度（以像素为单位）
+    int32_t bi_height; // 4Bytes，图像高度，+：图像存储顺序为Bottom2Top，-：Top2Bottom
+    uint16_t bi_planes; // 2Bytes，图像数据平面，BMP存储RGB数据，因此总为1
+    uint16_t bi_bit_count; // 2Bytes，图像像素位数
+    uint32_t bi_compression; // 4Bytes，0：不压缩，1：RLE8，2：RLE4
+    uint32_t bi_image_size; // 4Bytes，4字节对齐的图像数据大小
+    uint32_t bi_x_pels_per_meter; // 4Bytes，用象素/米表示的水平分辨率
+    uint32_t bi_y_pels_per_meter; // 4Bytes，用象素/米表示的垂直分辨率
+    uint32_t bi_clr_used; // 4Bytes，实际使用的调色板索引数，0：使用所有的调色板索引
+    uint32_t bi_clr_important; // 4Bytes，重要的调色板索引数，0：所有的调色板索引都重要
+} t_bmp_info_hearder;
+ 
+typedef struct {
+    uint8_t bp_blue; // 指定蓝色强度
+    uint8_t bp_green; // 指定绿色强度
+    uint8_t bp_red; // 指定红色强度
+    uint8_t bp_reserved; //保留，设置为0
+} t_bmp_pallet;
+ 
+typedef struct {
+    t_bmp_file_header bmp_file_header;
+    t_bmp_info_hearder bmp_info_hearder;
+    t_bmp_pallet bmp_pallet;
+} t_bmp_header;
+ 
+/* 取消地址对齐 */
+#pragma pack ()
+
+
+当我们读取头信息后，可以得到图像宽（bi_width）、高（bi_height）、bpp（bi_bit_count）、颜色数据的偏移量（bf_off_bits）
+
+根据这些信息，获得RGB数据，我们就可以通过操作framebuffer显示BMP图像了
+
+
+第二种解析：
+
+ 1 /*************************
+ 2 
+ 3 *bmp.h文件
+ 4 
+ 5 *************************/
+ 6 
+ 7 #ifndef __BMP_H__
+ 8 #define __BMP_H__
+ 9 
+10 #include <unistd.h>
+11 #include <stdio.h> 
+12 #include <stdlib.h>    
+13 #include <fcntl.h>
+14 #include <string.h>
+15 #include <linux/fb.h>
+16 #include <sys/mman.h>
+17 #include <sys/ioctl.h>
+18 #include <arpa/inet.h>
+19 
+20 //文件头结构体
+21 typedef struct 
+22 { 
+23 　　unsigned char    bfType[2]; 　　 //文件类型
+24 　　unsigned long bfSize;　　　　 //位图大小
+25 　　unsigned short bfReserved1;  //位0 
+26 　　unsigned short bfReserved2;  //位0
+27 　　unsigned long bfOffBits; 　　 //到数据偏移量
+28 } __attribute__((packed)) BitMapFileHeader; 　　//使编译器不优化，其大小为14字节 
+29 
+30 //信息头结构体
+31 typedef struct 
+32 { 
+33 　　unsigned long biSize; 　　 　　　　　　// BitMapFileHeader 字节数
+34 　　long biWidth; 　　　　　　 　　　　     //位图宽度 
+35 　　long biHeight; 　　　　　　　　　　　  //位图高度，正位正向，反之为倒图 
+36 　　unsigned short biPlanes; 　　　　　　 //为目标设备说明位面数，其值将总是被设为1
+37 　　unsigned short biBitCount; 　　　　   //说明比特数/象素，为1、4、8、16、24、或32。 
+38 　　unsigned long biCompression; 　　    //图象数据压缩的类型没有压缩的类型：BI_RGB 
+39 　　unsigned long biSizeImage; 　　　　 //说明图象的大小，以字节为单位 
+40 　　long biXPelsPerMeter;　　　　　　     //说明水平分辨率 
+41 　　long biYPelsPerMeter;　　　　　　　　//说明垂直分辨率 
+42 　　unsigned long biClrUsed;　　　　　　 //说明位图实际使用的彩色表中的颜色索引数
+43 　　unsigned long biClrImportant;　　　　//对图象显示有重要影响的索引数，0都重要。 
+44 } __attribute__((packed)) BitMapInfoHeader; 
+45 
+46 //像素点结构体
+47 typedef struct 
+48 { 
+49 　　unsigned char Blue; 　　　　 //该颜色的蓝色分量 
+50 　　unsigned char Green; 　　　 //该颜色的绿色分量 
+51 　　unsigned char Red; 　　       //该颜色的红色分量 
+52 　　unsigned char Reserved; 　  //保留值（亮度）   
+53 } __attribute__((packed)) RgbQuad;
+54 
+55  
+56 
+57 int show_photo(const char *fbp, struct fb_var_screeninfo *scrinfo, const char *bmpname);
+58 
+59 
+60 #endif //__BMP_H__
+
+1 /*************************
+ 2 
+ 3 *bmp.c文件
+ 4 
+ 5 *************************/
+ 6 
+ 7 #include "bmp.h"
+ 8 
+ 9  
+10 
+11 /*************************
+12 
+13 *fbp，映射内存起始地址
+14 
+15 *scrinfo，屏幕信息结构体
+16 
+17 *bmpname，.bmp位图文件名
+18 
+19 *************************/
+20 int show_photo(const char *fbp, struct fb_var_screeninfo *scrinfo, const char *bmpname)
+21 {
+22 　　if(NULL == fbp || NULL == scrinfo || NULL == bmpname)
+23 　　　　return -1;
+24 
+25 　　int line_x = 0, line_y = 0;
+26 　　unsigned long tmp = 0;
+27 　　int xres = scrinfo->xres_virtual;　　　　//屏幕宽（虚拟）
+28 　　int bits_per_pixel = scrinfo->bits_per_pixel;　　//屏幕位数
+29 　　BitMapFileHeader FileHead;
+30 　　BitMapInfoHeader InfoHead;
+31 　　RgbQuad rgb;　　　　
+32 
+33 　　unsigned long location = 0;
+34 
+35 　　//打开.bmp文件
+36 　　FILE *fb = fopen(bmpname, "rb");
+37 　　if (fb == NULL)
+38 　　{
+39 　　　　printf("fopen bmp error\r\n");
+40 　　　　return -1;
+41 　　}
+42 
+43 　　//读文件信息
+44 　　if (1 != fread( &FileHead, sizeof(BitMapFileHeader),1, fb))
+45 　　{
+46 　　　　printf("read BitMapFileHeader error!\n");
+47 　　　　fclose(fb);
+48 　　　　return -1;
+49 　　}
+50 　　if (memcmp(FileHead.bfType, "BM", 2) != 0)
+51 　　{
+52 　　　　printf("it's not a BMP file\n");
+53 　　　　fclose(fb);
+54 　　　　return -1;
+55 　　}
+56 　　
+57 　　//读位图信息
+58 　　if (1 != fread( (char *)&InfoHead, sizeof(BitMapInfoHeader),1, fb))
+59 　　{
+60 　　　　printf("read BitMapInfoHeader error!\n");
+61 　　　　fclose(fb);
+62 　　　　return -1;
+63 　　}
+64 　　
+65 　　//跳转至数据区
+66 　　fseek(fb, FileHead.bfOffBits, SEEK_SET);
+67 　　
+68 　　int len = InfoHead.biBitCount / 8;    //原图一个像素占几字节
+69 　　int bits_len = bits_per_pixel / 8;    //屏幕一个像素占几字节　　//循环显示
+70 
+71 　　while(!feof(fb))
+72 　　{
+73 　　　　tmp = 0;
+74 　　　　rgb.Reserved = 0xFF;
+75 　　
+76 　　　　if (len != fread((char *)&rgb, 1, len, fb))
+77 　　　　　　break;
+78 　　
+79 　　　　//计算该像素在映射内存起始地址的偏移量
+80 　　　　location = line_x * bits_len + (InfoHead.biHeight - line_y - 1) * xres * bits_len;
+81 　　
+82 　　　　tmp |= rgb.Reserved << 24 | rgb.Red << 16 | rgb.Green << 8 | rgb.Blue;
+83 　　
+84 　　　　*((unsigned long *)(fbp + location)) = tmp;    
+85 　　
+86 　　　　line_x++;    
+87 　　　　if (line_x == InfoHead.biWidth )
+88 　　　　{
+89 　　　　　　line_x = 0;
+90 　　　　　　line_y++;
+91 　　　　　　if(line_y == InfoHead.biHeight)    
+92 　　　　　　　　break;    
+93 　　　　}    
+94 　　}
+95 　　
+96 　　fclose(fb);
+97 
+98 　　return 0;
+99 }
+
+ 1 /*************************
+ 2 
+ 3 *main.c文件
+ 4 
+ 5 *************************/
+ 6 
+ 7 #include "bmp.h"
+ 8 
+ 9 int main()
+10 {
+11 　　int devfb, filefb;
+12 　　struct fb_var_screeninfo scrinfo;
+13 　　unsigned long screensize;
+14 　　char *fbp ;
+15 　　char bmpname[20] = {0};
+16 
+17 　　//打开设备文件
+18 　　devfb = open("/dev/fb0", O_RDWR);
+19 　　if(!devfb)
+20 　　{
+21 　　　　printf("devfb open error!\r\n");
+22 　　　　return -1;
+23 　　}
+24 　　//printf("devfb open OK! %d\r\n", devfb);
+25 
+26  
+27 
+28 　　//获取屏幕信息
+29 
+30 　　//若屏幕显示区域大小不合适，可用ioctl(devfb, FBIOPUT_VSCREENINFO, &scrinfo)设置
+31 　　if(ioctl(devfb, FBIOGET_VSCREENINFO, &scrinfo))
+32 　　{
+33 　　　　printf("get screen infomation error!\r\n");
+34 　　　　return -1;
+35 　　}
+36 
+37 　　//printf(".xres=%d, .yres=%d, .bit=%d\r\n",scrinfo.xres, scrinfo.yres, scrinfo.bits_per_pixel);
+38 
+39 　　//printf(".xres_virtual=%d, .yres_virtual=%d\r\n",scrinfo.xres_virtual, scrinfo.yres_virtual);
+40 
+41 　　if(32 != scrinfo.bits_per_pixel)
+42 　　{
+43 　　　　printf("screen infomation.bits error!\r\n");
+44 　　　　return -1;
+45 　　}
+46 
+47  
+48 
+49 　　//计算需要的映射内存大小
+50 　　screensize = scrinfo.xres_virtual * scrinfo.yres_virtual * scrinfo.bits_per_pixel / 8;
+51 　　//printf("screensize=%lu!\r\n", screensize);
+52 　　
+53 　　//内存映射
+54 　　fbp = (char *)mmap(NULL, screensize, PROT_READ | PROT_WRITE, MAP_SHARED, devfb, 0);
+55 　　if(-1 == (int)fbp)
+56 　　{
+57 　　　　printf("mmap error!\r\n");
+58 　　　　return -1;
+59 　　}
+60 　　
+61 　　scanf("%s", bmpname);
+62 　　
+63 　　//显示图片
+64 　　show_photo(fbp, &scrinfo, bmpname);
+65 
+66  
+67 
+68 　　//取消映射，关闭文件
+69 　　munmap(fbp, screensize);
+70 　　close(devfb);
+71 
+72 　　return 0;
+73 }
+
