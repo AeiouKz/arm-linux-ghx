@@ -11,7 +11,7 @@
 #include <string.h>
 
 
-#define  FREE(x)       if((x)){free((x));(x)=NULL;}
+//#define  FREE(x)       if((x)){free((x));(x)=NULL;}
 
 
 
